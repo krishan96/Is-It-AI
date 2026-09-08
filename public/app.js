@@ -65,6 +65,9 @@ function clearFile() {
   fileInput.value = '';
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = null;
+  // Drop the thumbnail itself, not just the card around it — the blob URL it
+  // points at has been revoked, and a stale image must never outlive its file.
+  el('file-preview').replaceChildren();
   el('file-card').hidden = true;
   results.hidden = true;
   showError('');

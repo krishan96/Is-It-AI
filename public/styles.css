@@ -16,6 +16,11 @@
 
 * { box-sizing: border-box; }
 
+/* An author `display` rule outranks the UA stylesheet's `[hidden]`, so a class
+   like `.file-card { display: flex }` would silently defeat `el.hidden = true`.
+   Every element toggled from JS relies on this holding. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background:
