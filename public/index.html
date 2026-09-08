@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is It AI? — AI Media Detector</title>
+<meta name="description" content="Upload an image or audio file, run it through free AI-detection APIs, and compare the results.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔍</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="masthead">
+    <h1>Is&nbsp;It&nbsp;AI?</h1>
+    <p class="tagline">Upload an image or audio file. It runs through every detector with a free API tier, and the scores are averaged into one likelihood.</p>
+  </header>
+
+  <div id="demo-banner" class="banner banner--demo" hidden>
+    <strong>Demo mode.</strong> No API keys are configured, so unconfigured tools return simulated scores derived from the file's hash. These are <em>not</em> real detections.
+  </div>
+
+  <section aria-labelledby="upload-heading">
+    <h2 id="upload-heading" class="sr-only">Upload a file</h2>
+    <div id="dropzone" class="dropzone" tabindex="0" role="button"
+         aria-describedby="dropzone-hint">
+      <svg class="dropzone__icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+      <p class="dropzone__title">Drop a file here, or click to browse</p>
+      <p id="dropzone-hint" class="dropzone__hint">Images: JPG, PNG, WebP · Audio: MP3, WAV, M4A</p>
+      <input type="file" id="file-input" class="sr-only" accept="image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,audio/mp4,.jpg,.jpeg,.png,.webp,.mp3,.wav,.m4a">
+    </div>
+
+    <div id="file-card" class="file-card" hidden>
+      <div class="file-card__preview" id="file-preview"></div>
+      <div class="file-card__meta">
+        <p class="file-card__name" id="file-name"></p>
+        <p class="file-card__detail" id="file-detail"></p>
+      </div>
+      <button type="button" id="clear-button" class="button button--ghost">Clear</button>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="analyze-button" class="button button--primary" disabled>Analyze</button>
+    </div>
+
+    <p id="error" class="error" role="alert" hidden></p>
+  </section>
+
+  <section id="results" class="results" aria-live="polite" hidden>
+    <div class="verdict" id="verdict-card">
+      <div class="verdict__gauge">
+        <span class="verdict__number" id="average-number">—</span>
+        <span class="verdict__unit">% AI likelihood</span>
+      </div>
+      <div class="verdict__body">
+        <p class="verdict__label" id="verdict-label">Analyzing…</p>
+        <div class="meter" role="img" id="meter" aria-label="Averaged AI likelihood">
+          <div class="meter__bands" aria-hidden="true">
+            <span class="meter__band meter__band--real"></span>
+            <span class="meter__band meter__band--uncertain"></span>
+            <span class="meter__band meter__band--ai"></span>
+          </div>
+          <div class="meter__marker" id="meter-marker" hidden></div>
+        </div>
+        <p class="verdict__scale" aria-hidden="true">
+          <span>0 · Likely real</span><span>Uncertain</span><span>Likely AI · 100</span>
+        </p>
+        <p class="verdict__note" id="verdict-note"></p>
+      </div>
+    </div>
+
+    <h2 class="section-heading">Per-tool results</h2>
+    <table class="tools">
+      <thead>
+        <tr><th scope="col">Tool</th><th scope="col">Supported</th><th scope="col">AI likelihood</th></tr>
+      </thead>
+      <tbody id="tools-body"></tbody>
+    </table>
+
+    <section id="credentials" class="panel" hidden>
+      <h2 class="section-heading">Content Credentials (C2PA)</h2>
+      <p class="panel__lede" id="credentials-note"></p>
+      <p class="panel__aside">Read locally from the file itself — free, no third-party call. Presence is reported, not cryptographically verified.</p>
+    </section>
+
+    <section id="reverse" class="panel" hidden>
+      <h2 class="section-heading">Trace the source</h2>
+      <p class="panel__lede">Finding the original beats guessing at pixels. Reverse image search is free and often decisive.</p>
+      <ul class="links" id="reverse-links"></ul>
+    </section>
+
+    <p class="disclaimer" id="disclaimer"></p>
+  </section>
+
+  <footer class="footer">
+    <p>Scores are signals, not proof. Accuracy varies by media type and by how new the generating model is — averaging smooths noise, it does not make a result authoritative.</p>
+  </footer>
+</main>
+<script src="app.js" type="module"></script>
+</body>
+</html>

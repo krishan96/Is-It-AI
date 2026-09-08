@@ -1,0 +1,21 @@
+{
+  "name": "is-it-ai",
+  "version": "1.0.0",
+  "description": "Upload an image or audio file, run it through free AI-detection APIs, and see an averaged likelihood that it is AI-generated.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "multer": "^2.3.0"
+  }
+}
