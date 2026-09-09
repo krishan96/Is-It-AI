@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { runDetectors } from '../server/detectors/index.js';
 import sightengine from '../server/detectors/sightengine.js';
 import aiornot from '../server/detectors/aiornot.js';
-import illuminarty from '../server/detectors/illuminarty.js';
+import huggingface, { scoreFromLabels } from '../server/detectors/huggingface.js';
 import { firstNumber, classifyStatus } from '../server/detectors/shared.js';
 
 const imageFile = { buffer: Buffer.from('fake-image'), filename: 'a.png', mimetype: 'image/png', kind: 'image' };
@@ -34,12 +34,12 @@ test('unconfigured tools report why, and score nothing', async () => {
 });
 
 test('image-only tools are skipped for audio, not scored zero', async () => {
-  const results = await runDetectors(audioFile, { AIORNOT_API_KEY: 'k' });
+  const results = await runDetectors(audioFile, { AIORNOT_API_KEY: 'k', HUGGINGFACE_API_KEY: 'k' });
   const byId = Object.fromEntries(results.map((r) => [r.id, r]));
   assert.equal(byId.sightengine.status, 'unsupported');
   assert.equal(byId.sightengine.score, null);
-  assert.equal(byId.illuminarty.status, 'unsupported');
   assert.notEqual(byId.aiornot.status, 'unsupported');
+  assert.notEqual(byId.huggingface.status, 'unsupported', 'Hugging Face covers audio too');
 });
 
 test('demo mode fills unconfigured tools with labelled, deterministic scores', async () => {
@@ -100,21 +100,73 @@ test('ai or not reads a nested confidence, and falls back to the verdict', async
   assert.equal(coarse.coarse, true);
 });
 
-test('illuminarty reads its AI probability', async () => {
-  const { raw } = await withFetch(
-    jsonResponse({ ai: 0.44 }),
-    () => illuminarty.analyze(imageFile, { ILLUMINARTY_API_KEY: 'k' }, {}),
+test('hugging face reads the AI label out of a classification list', async () => {
+  const { raw, model } = await withFetch(
+    jsonResponse([{ label: 'artificial', score: 0.91 }, { label: 'human', score: 0.09 }]),
+    () => huggingface.analyze(imageFile, { HUGGINGFACE_API_KEY: 'k' }, {}),
   );
-  assert.equal(raw, 0.44);
+  assert.equal(raw, 0.91);
+  assert.equal(model, 'Organika/sdxl-detector');
 });
 
-test('an unreadable response is a parse error, not a silent zero', async () => {
-  await assert.rejects(
-    () => withFetch(
-      jsonResponse({ unexpected: true }),
-      () => illuminarty.analyze(imageFile, { ILLUMINARTY_API_KEY: 'k' }, {}),
-    ),
-    (error) => error.code === 'parse',
+test('hugging face posts a raw binary body with the media type, not multipart', async () => {
+  let seen;
+  await withFetch(
+    async (url, init) => {
+      seen = { url, init };
+      return new Response(JSON.stringify([{ label: 'fake', score: 0.5 }]), { status: 200 });
+    },
+    () => huggingface.analyze(audioFile, { HUGGINGFACE_API_KEY: 'k' }, {}),
+  );
+  assert.match(seen.url, /router\.huggingface\.co\/hf-inference\/models\/MelodyMachine/);
+  assert.equal(seen.init.headers['Content-Type'], 'audio/mpeg');
+  assert.equal(seen.init.headers.Authorization, 'Bearer k');
+  assert.ok(Buffer.isBuffer(seen.init.body), 'the file is the body itself');
+});
+
+test('hugging face accepts HF_TOKEN as well as HUGGINGFACE_API_KEY', () => {
+  assert.equal(huggingface.isConfigured({ HF_TOKEN: 'k' }), true);
+  assert.equal(huggingface.isConfigured({ HUGGINGFACE_API_KEY: 'k' }), true);
+  assert.equal(huggingface.isConfigured({}), false);
+});
+
+test('hugging face models are configurable per media type', () => {
+  const env = { HUGGINGFACE_IMAGE_MODEL: 'me/my-image-model', HUGGINGFACE_AUDIO_MODEL: 'me/my-audio-model' };
+  assert.equal(huggingface.modelFor(env, 'image'), 'me/my-image-model');
+  assert.equal(huggingface.modelFor(env, 'audio'), 'me/my-audio-model');
+  assert.equal(huggingface.modelFor({}, 'image'), 'Organika/sdxl-detector');
+});
+
+test('hugging face waits out a cold model and retries once', async () => {
+  let calls = 0;
+  const { raw } = await withFetch(
+    async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response(JSON.stringify({ error: 'Model is currently loading', estimated_time: 0.01 }), { status: 503 })
+        : new Response(JSON.stringify([{ label: 'artificial', score: 0.6 }]), { status: 200 });
+    },
+    () => huggingface.analyze(imageFile, { HUGGINGFACE_API_KEY: 'k' }, {}),
+  );
+  assert.equal(calls, 2);
+  assert.equal(raw, 0.6);
+});
+
+test('scoreFromLabels handles each label vocabulary', () => {
+  assert.equal(scoreFromLabels([{ label: 'artificial', score: 0.8 }, { label: 'human', score: 0.2 }]), 0.8);
+  assert.equal(scoreFromLabels([{ label: 'fake', score: 0.7 }, { label: 'real', score: 0.3 }]), 0.7);
+  assert.equal(scoreFromLabels([{ label: 'Spoof', score: 0.9 }, { label: 'bonafide', score: 0.1 }]), 0.9);
+  assert.equal(scoreFromLabels([{ label: 'AI-Generated', score: 0.4 }, { label: 'Real', score: 0.6 }]), 0.4);
+});
+
+test('scoreFromLabels infers AI as the remainder when only the human label is known', () => {
+  assert.equal(scoreFromLabels([{ label: 'human', score: 0.25 }, { label: 'nsfw', score: 0.75 }]), 0.75);
+});
+
+test('scoreFromLabels refuses to guess at unrecognizable labels', () => {
+  assert.throws(
+    () => scoreFromLabels([{ label: 'LABEL_0', score: 0.9 }, { label: 'LABEL_1', score: 0.1 }], 'audio'),
+    (error) => error.code === 'parse' && /LABEL_0/.test(error.message) && /HUGGINGFACE_AUDIO_MODEL/.test(error.message),
   );
 });
 

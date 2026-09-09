@@ -30,7 +30,7 @@ DEMO_MODE=true npm start
 Demo mode fills unconfigured tools with a score derived from the file's own hash — stable per file, and labelled as simulated everywhere it appears. It is not a detection. Do not leave it on in production.
 
 ```bash
-npm test                  # 35 tests, no network access needed
+npm test                  # 42 tests, no network access needed
 ```
 
 ## Detectors
@@ -39,11 +39,13 @@ npm test                  # 35 tests, no network access needed
 |---|---|---|---|
 | [Sightengine](https://sightengine.com/docs/ai-generated-image-detection) | Image | ~2,000 ops/month | `SIGHTENGINE_API_USER`, `SIGHTENGINE_API_SECRET` |
 | [AI or Not](https://docs.aiornot.com) | Image, audio | Free tier + paid | `AIORNOT_API_KEY` |
-| [Illuminarty](https://illuminarty.ai/en/api-docs) | Image | Free tier | `ILLUMINARTY_API_KEY` |
+| [Hugging Face](https://huggingface.co/docs/inference-providers) | Image, audio | Free inference tier | `HUGGINGFACE_API_KEY` (or `HF_TOKEN`) |
 
 Every detector is optional. The app runs with whatever is configured and reports the rest as unconfigured rather than failing.
 
-**Audio coverage is thin.** Of the free options, AI or Not is the only one that handles audio, so an audio "average" usually comes from a single tool. The UI says so on the result rather than presenting one opinion as a consensus.
+Hugging Face is different in kind from the other two: it is not a vendor's verdict but whichever community classifier you point it at. The defaults are `Organika/sdxl-detector` for images and `MelodyMachine/Deepfake-audio-detection-V2` for audio, and both are configurable — treat them as a starting point and swap in better models as they appear.
+
+Because Hugging Face serves audio models too, audio is covered by **two** tools rather than one. That was the weakest part of the original design. It's still the thinner side, and the UI flags a result that came from a single tool.
 
 Hive and Reality Defender are strong but effectively paid/enterprise, so they are out of the free build. Adding one is a new file in `server/detectors/` plus a line in the registry.
 
@@ -52,7 +54,7 @@ Hive and Reality Defender are strong but effectively paid/enterprise, so they ar
 ```
 [ Browser ]  ──upload──►  [ Express server ]  ──►  Sightengine
    public/                  holds API keys     ──►  AI or Not
-                                               ──►  Illuminarty
+                                               ──►  Hugging Face
       ◄──── averaged + per-tool results ──────────┘
 ```
 
@@ -63,10 +65,10 @@ server/
   index.js              Express app, routes, upload limits
   detectors/
     index.js            registry + parallel fan-out + demo mode
-    shared.js           multipart upload, timeouts, HTTP error classification
+    shared.js           multipart + raw-binary upload, timeouts, error classification
     sightengine.js      one adapter per tool: call it, dig out its probability
     aiornot.js
-    illuminarty.js
+    huggingface.js
   lib/
     scoring.js          normalize → average → verdict band
     media.js            image/audio detection from magic bytes, MIME, extension
@@ -99,7 +101,9 @@ average       = mean(scores from tools that answered)
 
 Every tool is isolated: one failing never fails the batch, and the reason reaches the results table in plain language. HTTP statuses are classified into what you actually need to know — `auth` (bad key), `quota` (free tier exhausted), `rate_limit` (throttled, retry), `timeout`, `unsupported`, `parse` (response shape changed), `upstream`. Each detector call has its own timeout (`DETECTOR_TIMEOUT_MS`, default 30s), so a hanging provider cannot stall the request.
 
-Sightengine reports some failures with HTTP 200 and `status: "failure"`, so that body is checked too.
+Two provider-specific quirks are handled: Sightengine reports some failures with HTTP 200 and `status: "failure"`, and Hugging Face answers 503 with an `estimated_time` while a model cold-starts — that one is waited out and retried once, within the detector's timeout.
+
+Hugging Face classifiers also don't agree on label names, so the adapter maps by meaning (`artificial`/`human`, `fake`/`real`, `spoof`/`bonafide`) and sums the AI-side scores. Faced with labels it can't interpret — `LABEL_0` and `LABEL_1`, say — it reports what the model returned instead of guessing a side, since a guess here would produce a confident number backed by nothing.
 
 ## Content Credentials
 
@@ -120,7 +124,7 @@ This is a **presence** check, not cryptographic verification — that needs the 
     { "id": "sightengine", "name": "Sightengine", "status": "ok", "score": 92 },
     { "id": "aiornot", "name": "AI or Not", "status": "error", "score": null,
       "errorCode": "quota", "message": "Free-tier quota exhausted for this tool." },
-    { "id": "illuminarty", "name": "Illuminarty", "status": "ok", "score": 78 }
+    { "id": "huggingface", "name": "Hugging Face", "status": "ok", "score": 78 }
   ],
   "average": 85,
   "verdict": "Likely AI-generated",
@@ -148,6 +152,6 @@ Detection is probabilistic. Accuracy varies a lot by media type and by how new t
 | `DETECTOR_TIMEOUT_MS` | `30000` | Per-detector timeout |
 | `DEMO_MODE` | `false` | Simulated scores for unconfigured tools |
 
-Provider endpoints and multipart field names are also overridable (`SIGHTENGINE_API_URL`, `AIORNOT_IMAGE_URL`, `AIORNOT_AUDIO_URL`, `AIORNOT_FILE_FIELD`, `ILLUMINARTY_API_URL`, `ILLUMINARTY_FILE_FIELD`) — these APIs move their endpoints and rename fields, and that shouldn't need a code change. Confirm each against the provider's current docs before relying on it.
+The Hugging Face models are chosen with `HUGGINGFACE_IMAGE_MODEL` and `HUGGINGFACE_AUDIO_MODEL`. Provider endpoints and multipart field names are overridable too (`SIGHTENGINE_API_URL`, `AIORNOT_IMAGE_URL`, `AIORNOT_AUDIO_URL`, `AIORNOT_FILE_FIELD`, `HUGGINGFACE_API_URL`) — these APIs move their endpoints and rename fields, and that shouldn't need a code change. Confirm each against the provider's current docs before relying on it.
 
 Requires Node 18.17+ (uses the built-in `fetch`, `FormData`, and `Blob`). Runtime dependencies: `express`, `multer`, `dotenv`.

@@ -57,12 +57,23 @@ test('audio skips the image-only tools and says so', async () => {
 
   const byId = Object.fromEntries(body.perTool.map((t) => [t.id, t]));
   assert.equal(byId.sightengine.status, 'unsupported');
-  assert.equal(byId.illuminarty.status, 'unsupported');
-  assert.equal(byId.aiornot.score, body.average, 'the average is the one supporting tool alone');
-  assert.equal(body.contributingTools, 1);
-  assert.equal(body.singleSource, true, 'thin audio coverage is flagged to the UI');
+  assert.equal(byId.sightengine.score, null);
+
+  // AI or Not and Hugging Face both cover audio, so it is no longer single-source.
+  assert.equal(byId.aiornot.status, 'demo');
+  assert.equal(byId.huggingface.status, 'demo');
+  assert.equal(body.contributingTools, 2);
+  assert.equal(body.singleSource, false);
+  assert.equal(body.average, Math.round((byId.aiornot.score + byId.huggingface.score) / 2));
+
   assert.equal(body.contentCredentials, null);
   assert.deepEqual(body.reverseSearch, []);
+});
+
+test('an image still runs through all three tools', async () => {
+  const { body } = await analyze(PNG, 'photo.png', 'image/png');
+  assert.equal(body.contributingTools, 3);
+  assert.deepEqual(body.perTool.map((t) => t.id), ['sightengine', 'aiornot', 'huggingface']);
 });
 
 test('an unsupported file type is rejected with 415', async () => {

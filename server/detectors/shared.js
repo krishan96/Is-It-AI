@@ -29,18 +29,11 @@ export function classifyStatus(status, body) {
   return new DetectorError(`Upstream returned HTTP ${status}.`, 'upstream', { status, detail: String(text).slice(0, 200) });
 }
 
-/**
- * POST a multipart form with the uploaded file attached.
- * `signal` carries the per-request timeout from the caller.
- */
-export async function postMultipart(url, { fileField, file, fields = {}, headers = {}, signal }) {
-  const form = new FormData();
-  for (const [key, value] of Object.entries(fields)) form.append(key, value);
-  form.append(fileField, new Blob([file.buffer], { type: file.mimetype || 'application/octet-stream' }), file.filename);
-
+/** Send one request and normalize the response and its failure modes. */
+async function send(url, { body, headers, signal }) {
   let response;
   try {
-    response = await fetch(url, { method: 'POST', body: form, headers, signal });
+    response = await fetch(url, { method: 'POST', body, headers, signal });
   } catch (error) {
     if (error?.name === 'AbortError') {
       throw new DetectorError('Timed out waiting for this tool to respond.', 'timeout');
@@ -49,14 +42,41 @@ export async function postMultipart(url, { fileField, file, fields = {}, headers
   }
 
   const text = await response.text();
-  let body;
+  let parsed;
   try {
-    body = JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
-    body = text;
+    parsed = text;
   }
-  if (!response.ok) throw classifyStatus(response.status, body);
-  return body;
+  if (!response.ok) {
+    const error = classifyStatus(response.status, parsed);
+    error.body = parsed; // some providers put actionable detail in the body
+    throw error;
+  }
+  return parsed;
+}
+
+/**
+ * POST a multipart form with the uploaded file attached.
+ * `signal` carries the per-request timeout from the caller.
+ */
+export async function postMultipart(url, { fileField, file, fields = {}, headers = {}, signal }) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  form.append(fileField, new Blob([file.buffer], { type: file.mimetype || 'application/octet-stream' }), file.filename);
+  return send(url, { body: form, headers, signal });
+}
+
+/**
+ * POST the file as a raw binary body — what Hugging Face's inference API wants,
+ * with the media type in Content-Type rather than a multipart wrapper.
+ */
+export async function postBinary(url, { file, headers = {}, signal }) {
+  return send(url, {
+    body: file.buffer,
+    headers: { 'Content-Type': file.mimetype || 'application/octet-stream', ...headers },
+    signal,
+  });
 }
 
 /** Read a value out of a nested object by dotted path, tolerating gaps. */

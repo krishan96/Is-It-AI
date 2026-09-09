@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import sightengine from './sightengine.js';
 import aiornot from './aiornot.js';
-import illuminarty from './illuminarty.js';
+import huggingface from './huggingface.js';
 import { toPercent } from '../lib/scoring.js';
 
-export const DETECTORS = [sightengine, aiornot, illuminarty];
+export const DETECTORS = [sightengine, aiornot, huggingface];
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
