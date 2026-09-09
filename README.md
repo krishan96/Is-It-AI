@@ -4,6 +4,8 @@ Upload an **image** or **audio** file, run it through the AI-detection tools tha
 
 ![Per-tool scores and an averaged verdict](docs/screenshot.png)
 
+<sub>Dark theme above; [light theme here](docs/screenshot-light.png). The switch is top-right, and with no choice made the page follows your OS.</sub>
+
 ## What it does
 
 1. You upload an image (`.jpg`, `.png`, `.webp`) or audio file (`.mp3`, `.wav`, `.m4a`).
@@ -74,11 +76,27 @@ server/
     media.js            image/audio detection from magic bytes, MIME, extension
     c2pa.js             Content Credentials presence check (local, no deps)
     links.js            reverse image search targets
-public/                 frontend: no build step, no framework
+public/
+  index.html            markup
+  styles.css            theme tokens, layout, decoration
+  app.js                upload, fetch, render
+  backdrop.js           the animated dot field behind the page
+  text-fx.js            scramble / count-up / stagger
+  theme.js              light / dark / follow-the-system
 test/                   unit + end-to-end tests
 ```
 
+No build step and no framework — the whole frontend is four modules the browser loads directly.
+
 Uploads are held in memory and forwarded straight to the detectors — nothing is written to disk, and the buffer is released with the response.
+
+## Interface
+
+The background is a dot field with a scan line travelling through it, and it carries state rather than only decorating: the sweep speeds up while detectors are running, and the field takes on the verdict's colour once they land, so the answer reads from across the room before you reach the number. The title decodes itself out of random glyphs on arrival, the score counts up like an instrument readout, and result rows stagger in.
+
+**Theme.** Light, dark, or neither — with no choice stored the page follows your OS and keeps following it if you change it mid-session. A choice is remembered and applied before first paint, so a dark-mode visitor never gets a white flash.
+
+**Motion and access.** All of the above respects `prefers-reduced-motion`: the field renders one static frame, text arrives already resolved, and the score is set rather than counted. The decorative layers are `aria-hidden`, and the animated title keeps a stable `aria-label`, so a screen reader is never handed a frame of scrambled characters. The canvas stops drawing in a background tab.
 
 ## Scoring
 

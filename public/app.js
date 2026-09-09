@@ -1,5 +1,9 @@
 /** Frontend: pick a file, post it to /api/analyze, render the comparison. */
 
+import { createBackdrop } from './backdrop.js';
+import { createThemeSwitch } from './theme.js';
+import { scramble, countUp, revealChildren } from './text-fx.js';
+
 const el = (id) => document.getElementById(id);
 const dropzone = el('dropzone');
 const fileInput = el('file-input');
@@ -11,6 +15,11 @@ const toolsBody = el('tools-body');
 let selectedFile = null;
 let previewUrl = null;
 let config = { detectors: [], demoMode: false };
+
+const backdrop = createBackdrop(el('backdrop'));
+createThemeSwitch(el('theme-switch'), (theme) => backdrop.setTheme(theme));
+// The title decodes itself on arrival — the app's whole job, in one gesture.
+scramble(el('title-text'));
 
 /* ---------- config ---------- */
 
@@ -70,6 +79,7 @@ function clearFile() {
   el('file-preview').replaceChildren();
   el('file-card').hidden = true;
   results.hidden = true;
+  backdrop.setVerdict(null);
   showError('');
 }
 
@@ -127,6 +137,7 @@ async function analyze() {
     render(payload);
   } catch (error) {
     results.hidden = true;
+    backdrop.setVerdict(null);
     showError(error.message || 'Could not reach the server.');
   } finally {
     analyzeButton.disabled = false;
@@ -137,6 +148,7 @@ async function analyze() {
 /** Show a spinner row per tool while the fan-out is in flight. */
 function renderPending() {
   results.hidden = false;
+  backdrop.setMode('scanning');
   el('credentials').hidden = true;
   el('reverse').hidden = true;
   el('average-number').textContent = '—';
@@ -174,10 +186,12 @@ function render(payload) {
   const average = payload.average;
   const card = el('verdict-card');
   card.setAttribute('data-level', payload.level);
-  el('average-number').textContent = average === null ? '—' : average;
-  el('verdict-label').textContent = average === null
-    ? 'No tool could score this file'
-    : payload.verdict;
+  // The field takes the verdict's colour, so the answer reads from the page
+  // as a whole before you get to the number.
+  backdrop.setVerdict(payload.level);
+
+  countUp(el('average-number'), average);
+  scramble(el('verdict-label'), average === null ? 'No tool could score this file' : payload.verdict);
 
   const marker = el('meter-marker');
   if (average === null) {
@@ -191,6 +205,7 @@ function render(payload) {
   el('verdict-note').textContent = buildNote(payload);
 
   toolsBody.replaceChildren(...payload.perTool.map(toolRow));
+  revealChildren(toolsBody);
 
   const credentials = payload.contentCredentials;
   const credentialsPanel = el('credentials');
